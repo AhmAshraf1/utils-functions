@@ -21,6 +21,10 @@ from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from sklearn.model_selection import cross_val_score, cross_val_predict
 from sklearn.model_selection import train_test_split
 
+# Encoders & Scalers
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, MaxAbsScaler
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder, OrdinalEncoder
+
 # Regression Models
 from sklearn.tree import DecisionTreeRegressor, ExtraTreeRegressor
 from xgboost import XGBRegressor, XGBRFRegressor
@@ -222,6 +226,114 @@ def visualize_nulls(data, plot_type="count"):
     return nulls_df
 
     # Function used to evaluate a regression model
+
+
+def encode_data(X_train, X_test, encoder_type='label', columns=None):
+    """
+    Encodes the training and testing data using the specified encoder type.
+
+    Parameters:
+    X_train (pd.DataFrame): Training data.
+    X_test (pd.DataFrame): Testing data.
+    encoder_type (str): Type of encoder ('label' or 'onehot'). Default is 'label'.
+    columns (list): List of columns to encode. If None, all object type columns are encoded.
+
+    Returns:
+    X_train_encoded (pd.DataFrame): Encoded training data.
+    X_test_encoded (pd.DataFrame): Encoded testing data.
+    """
+
+    if columns is None:
+        # Default to all object type columns if no columns are specified
+        columns = X_train.select_dtypes(include=['object']).columns.tolist()
+
+    X_train_encoded = X_train.copy()
+    X_test_encoded = X_test.copy()
+
+    if encoder_type == 'label':
+        for col in columns:
+            le = LabelEncoder()
+            X_train_encoded[col] = le.fit_transform(X_train[col])
+            X_test_encoded[col] = le.transform(X_test[col])
+
+    elif encoder_type == 'onehot':
+        for col in columns:
+            ohe = OneHotEncoder(handle_unknown='ignore', sparse=False)
+            encoded_train = ohe.fit_transform(X_train[[col]])
+            encoded_test = ohe.transform(X_test[[col]])
+
+            # Create a DataFrame with the encoded data
+            encoded_train_df = pd.DataFrame(encoded_train, columns=ohe.get_feature_names_out([col]))
+            encoded_test_df = pd.DataFrame(encoded_test, columns=ohe.get_feature_names_out([col]))
+
+            # Concatenate the new columns to the original dataframes and drop the original columns
+            X_train_encoded = pd.concat([X_train_encoded.drop(col, axis=1), encoded_train_df], axis=1)
+            X_test_encoded = pd.concat([X_test_encoded.drop(col, axis=1), encoded_test_df], axis=1)
+
+    return X_train_encoded, X_test_encoded
+
+
+def encode_target(y_train, y_test, encoder_type='label'):
+    """
+    Encodes the target columns in the training and testing data using the specified encoder type.
+
+    Parameters:
+    y_train (pd.Series or pd.DataFrame): Training target data.
+    y_test (pd.Series or pd.DataFrame): Testing target data.
+
+    Returns:
+    y_train_encoded (pd.Series): Encoded training target data.
+    y_test_encoded (pd.Series): Encoded testing target data.
+    """
+
+    if encoder_type == 'label':
+        encoder = LabelEncoder()
+        y_train_encoded = encoder.fit_transform(y_train)
+        y_test_encoded = encoder.transform(y_test)
+    else:
+        raise ValueError("Invalid encoder_type. Currently supported: 'label'.")
+
+    y_train_encoded = pd.Series(y_train_encoded, index=y_train.index)
+    y_test_encoded = pd.Series(y_test_encoded, index=y_test.index)
+
+    return y_train_encoded, y_test_encoded
+
+
+def scale_data(X_train, X_test, scaler_type='standard', columns=None):
+    """
+    Scales the training and testing data using the specified scaler type.
+
+    Parameters:
+    X_train (pd.DataFrame): Training data.
+    X_test (pd.DataFrame): Testing data.
+    scaler_type (str): Type of scaler ('standard', 'minmax', 'robust'). Default is 'standard'.
+    columns (list): List of columns to scale. If None, all numeric columns are scaled.
+
+    Returns:
+    X_train_scaled (pd.DataFrame): Scaled training data.
+    X_test_scaled (pd.DataFrame): Scaled testing data.
+    """
+
+    if columns is None:
+        # Default to all numeric columns if no columns are specified
+        columns = X_train.select_dtypes(include=['float64', 'int64']).columns.tolist()
+
+    X_train_scaled = X_train.copy()
+    X_test_scaled = X_test.copy()
+
+    if scaler_type == 'standard':
+        scaler = StandardScaler()
+    elif scaler_type == 'minmax':
+        scaler = MinMaxScaler()
+    elif scaler_type == 'robust':
+        scaler = RobustScaler()
+    else:
+        raise ValueError("Invalid scaler_type. Choose from 'standard', 'minmax', 'robust'.")
+
+    X_train_scaled[columns] = scaler.fit_transform(X_train[columns])
+    X_test_scaled[columns] = scaler.transform(X_test[columns])
+
+    return X_train_scaled, X_test_scaled
 
 
 def evaluate_regression_models(X_train, y_train, X_test, y_test, models):
