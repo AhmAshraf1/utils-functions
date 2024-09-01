@@ -11,8 +11,11 @@ import plotly.graph_objects as go
 
 # Metrics
 from sklearn.metrics import (mean_squared_error, r2_score, accuracy_score, root_mean_squared_error,
-                             f1_score, precision_score, recall_score, roc_auc_score, mean_absolute_error)
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, classification_report
+                             f1_score, precision_score, recall_score, roc_auc_score, mean_absolute_error,
+                             roc_curve, auc, average_precision_score, precision_recall_curve, fbeta_score)
+from sklearn.metrics import (confusion_matrix, ConfusionMatrixDisplay, classification_report, RocCurveDisplay,
+                             PrecisionRecallDisplay)
+from mlxtend.plotting import plot_confusion_matrix
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 from sklearn.mixture import GaussianMixture
 
@@ -90,7 +93,7 @@ def analyze_IQR_outliers(data, num_columns):
 
 
 # Function to visualize counts, percentages outliers or both
-def visualize_outliers(outlier_data, plot_type="count"):
+def visualize_outliers(outlier_data, plot_type="counts"):
     """
     Visualizes outliers in numerical columns of a DataFrame using Plotly.
 
@@ -98,7 +101,7 @@ def visualize_outliers(outlier_data, plot_type="count"):
         outlier_data (dictionary): The dictionary containing the outliers, their counts, and percentages
                                    for each column.
         plot_type (str, optional): Controls the type of plot to show. Valid options are
-                                   "counts", "percentages". Defaults to "count".
+                                   "counts", "percentages". Defaults to "counts".
 
     Returns:
         Plotly visualizations of outliers in numerical columns.
@@ -395,27 +398,35 @@ def evaluate_classification_models(X_train, y_train, X_test, y_test, models):
     """
 
     model_results = []
-    # trained_models = {}
+    trained_models = {}
     for model in models:
         model.fit(X_train, y_train)
-        # trained_models[model.__class__.__name__] = model  # Save trained model with name
+        trained_models[model.__class__.__name__] = model  # Save trained model with name
         start_time = time.time()  # Record start time
         prediction = model.predict(X_test)
+        prediction_train = model.predict(X_train)
+        y_prob = model.predict_proba(X_test)[:, 1]
         inference_time = time.time() - start_time  # Calculate inference time
 
         model_results.append({
             "Model-Name": model.__class__.__name__,
-            "Accuracy": accuracy_score(y_test, prediction) * 100,
+            "Test_Accuracy": accuracy_score(y_test, prediction) * 100,
+            "Train_Accuracy": accuracy_score(y_train, prediction_train) * 100,
             "ROC_AUC": roc_auc_score(y_test, prediction),
             "F1_Score": f1_score(y_test, prediction),
             "Precision": precision_score(y_test, prediction),
             "Recall": recall_score(y_test, prediction),
-            "Inference Time (ms)": inference_time * 1000
+            "Inference Time (ms)": inference_time * 1000,
+            "F0.5_Score": fbeta_score(y_test, prediction, beta=0.5),
+            "F2_Score": fbeta_score(y_test, prediction, beta=2),
+            "Prediction": prediction,
+            "Y_Proba": y_prob,
+            "ROC": roc_curve(y_test, prediction)
         })
 
     models_df = pd.DataFrame(model_results)
     models_df = models_df.set_index('Model-Name')
-    return models_df.sort_values("F1_Score", ascending=False)
+    return models_df.sort_values("F1_Score", ascending=False), trained_models
 
 
 # Function used to plot confusion matrix and classification Report
@@ -448,9 +459,12 @@ def evaluate_classification_metrics(y_true, y_pred, target_names=None, display=T
         ConfusionMatrixDisplay(cm, display_labels=target_names).plot()
         plt.show()  # Display the confusion matrix plot
 
+    cm_normalized = plot_confusion_matrix(conf_mat=cm, class_names=target_names, show_normed=True)
+
     # Return results in a dictionary for easy access
     evaluation_results = {
         "Confusion Matrix": cm,
+        "Confusion Matrix Normalized": cm_normalized,
         "Classification Report": report,
         "Target Names": target_names,  # Include target names if provided
     }
@@ -661,14 +675,55 @@ def precision_recall_f1(y_test, prediction):
     print('F1_score:  ' + str(f1_score(y_test, prediction)))
 
 
-def plot_roc_curve(fpr, tpr, label=None):
-    plt.plot(fpr, tpr, linewidth=2, label='auc= ' + str(label))
-    plt.plot([0, 1], [0, 1], "k--")
-    plt.xlabel("False Positive Rate")
-    plt.ylabel("True Positive Rate(Recall)")
-    plt.title("ROC Curve")
-    plt.axis([0, 1, 0, 1])
-    plt.legend(loc=4)
+def plot_roc_auc_curve(y_test, y_prob):
+    """
+    Plots ROC AUC Curve
+
+    Args:
+        y_test (pd.Series): Predicted labels.
+        y_prob (pd.Series): Probability of predicted labels.
+
+    Returns:
+        plot for ROC AUC Curve
+    """
+
+    fpr, tpr, _ = roc_curve(y_test, y_prob)
+    roc_auc = auc(fpr, tpr)
+
+    RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=roc_auc).plot()
+    plt.fill_between(fpr, tpr, color='blue', alpha=0.2)
+    plt.plot([0, 1], [0, 1], color='red', linestyle='--', label='Worst Case')
+    plt.title('ROC AUC Curve')
+    plt.legend(loc="lower right")
+    plt.show()
+
+
+def plot_precision_recall_curve(y_true, y_pred_proba):
+    """
+    Plots the Precision-Recall curve for a binary classification model.
+
+    Args:
+        y_true (array-like): Ground truth labels.
+        y_pred_proba (array-like): Predicted probabilities for the positive class.
+    """
+    # Compute precision and recall
+    precision, recall, _ = precision_recall_curve(y_true, y_pred_proba)
+
+    # Compute average precision score
+    avg_precision = average_precision_score(y_true, y_pred_proba)
+
+    # Create PrecisionRecallDisplay object
+    display = PrecisionRecallDisplay(precision=precision, recall=recall)
+
+    # Plot the Precision-Recall curve
+    fig, ax = plt.subplots(figsize=(8, 6))
+    display.plot(ax=ax)
+
+    # Add title and labels
+    ax.set_title(f'Precision-Recall Curve (AP = {avg_precision:.2f})')
+    ax.set_xlabel('Recall')
+    ax.set_ylabel('Precision')
+
     plt.show()
 
 
