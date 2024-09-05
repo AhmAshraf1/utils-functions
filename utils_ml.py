@@ -109,12 +109,14 @@ def visualize_outliers(outlier_data, plot_type="counts"):
 
     # Extract the data for plotting
     columns = list(outlier_data.keys())
-    counts = sorted([value['count'] for value in outlier_data.values()], reverse=True)
-    percentages = sorted([round(value['percentage'], 2) for value in outlier_data.values()], reverse=True)
 
     # Visualization based on plot_type argument
     if plot_type == "counts":
-        fig = px.bar(x=columns, y=counts, color=columns, text_auto=True)
+        counts = [value['count'] for value in outlier_data.values()]
+        sorted_columns = [x for _, x in sorted(zip(counts, columns), reverse = True)]
+        sorted_count = sorted(counts, reverse = True)
+        
+        fig = px.bar(x=sorted_columns, y=sorted_count, color=columns, text_auto=True)
         fig.update_layout(
             title='Number of Outliers in Each Column',
             xaxis_title='Columns',
@@ -125,7 +127,12 @@ def visualize_outliers(outlier_data, plot_type="counts"):
         fig.show()
 
     elif plot_type == "percentages":
-        fig = px.bar(x=columns, y=percentages, color=columns, text_auto=True)
+        percentages = [value['percentage'] for value in outlier_data.values()]
+        sorted_columns = [x for _, x in sorted(zip(percentages, columns), reverse = True)]
+        sorted_percentage = sorted(percentages, reverse = True)
+
+        
+        fig = px.bar(x=sorted_columns, y=sorted_percentage, color=columns, text_auto=True)
         fig.update_layout(
             title='Percentage of Outliers in Each Column',
             xaxis_title='Columns',
